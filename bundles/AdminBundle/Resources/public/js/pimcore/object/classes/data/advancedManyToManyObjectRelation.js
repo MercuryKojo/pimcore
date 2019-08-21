@@ -52,7 +52,7 @@ pimcore.object.classes.data.advancedManyToManyObjectRelation = Class.create(pimc
     },
 
     getIconClass: function () {
-        return "pimcore_icon_objectsMetadata";
+        return "pimcore_icon_advancedManyToManyObjectRelation";
     },
 
     getLayout: function ($super) {
@@ -409,5 +409,5 @@ pimcore.object.classes.data.advancedManyToManyObjectRelation = Class.create(pimc
 
 });
 
-// @TODO BC layer, to be removed in v6.0
+// @TODO BC layer, to be removed in v7.0
 pimcore.object.classes.data.objectsMetadata = pimcore.object.classes.data.advancedManyToManyObjectRelation;

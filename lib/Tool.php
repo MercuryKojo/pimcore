@@ -15,9 +15,6 @@
 namespace Pimcore;
 
 use GuzzleHttp\RequestOptions;
-use Pimcore\Cache\Symfony\CacheClearer;
-use Pimcore\FeatureToggles\Features\DebugMode;
-use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\HttpFoundation\Request;
 
 class Tool
@@ -360,18 +357,6 @@ class Tool
     }
 
     /**
-     * @deprecated Just a BC compatibility method
-     *
-     * @param Request|null $request
-     *
-     * @return bool
-     */
-    public static function isFrontentRequestByAdmin(Request $request = null)
-    {
-        return self::isFrontendRequestByAdmin($request);
-    }
-
-    /**
      * @static
      *
      * @param Request|null $request
@@ -400,7 +385,7 @@ class Tool
         ]);
 
         // check for manually disabled ?pimcore_outputfilters_disabled=true
-        if (array_key_exists('pimcore_outputfilters_disabled', $requestKeys) && \Pimcore::inDebugMode(DebugMode::MAGIC_PARAMS)) {
+        if (array_key_exists('pimcore_outputfilters_disabled', $requestKeys) && \Pimcore::inDebugMode()) {
             return false;
         }
 
@@ -493,12 +478,23 @@ class Tool
     public static function getClientIp(Request $request = null)
     {
         $request = self::resolveRequest($request);
-
-        if (null === $request) {
-            return null;
+        if ($request) {
+            return $request->getClientIp();
         }
 
-        return $request->getClientIp();
+        // fallback to $_SERVER variables
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+
+        $ips = explode(',', $ip);
+        $ip = trim(array_shift($ips));
+
+        return $ip;
     }
 
     /**
@@ -632,51 +628,6 @@ class Tool
     }
 
     /**
-     * @deprecated Use the Pimcore\Cache\Symfony\CacheClearer service
-     *
-     * @param Container|null $container
-     */
-    public static function clearSymfonyCache(Container $container = null)
-    {
-        if (count(func_get_args()) > 1) {
-            @trigger_error(
-                sprintf(
-                    'The $envSpecific flag for Tool::clearSymfonyCache is not supported anymore. Please use the %s service instead.',
-                    CacheClearer::class
-                ),
-                E_USER_DEPRECATED
-            );
-        }
-
-        if (!$container) {
-            $container = \Pimcore::getContainer();
-        }
-
-        $kernel = $container->get('kernel');
-
-        $clearer = $container->get(CacheClearer::class);
-        $clearer->clear($kernel->getEnvironment());
-    }
-
-    /**
-     * @deprecated Will be removed in Pimcore 6
-     */
-    public static function getSymfonyCacheDirRemoveTempLocation(string $realCacheDir): string
-    {
-        @trigger_error(
-            sprintf(
-                'The Tool::getSymfonyCacheDirRemoveTempLocation() method is deprecated and will be removed in Pimcore 6. Please use the %s service instead.',
-                CacheClearer::class
-            ),
-            E_USER_DEPRECATED
-        );
-
-        // the temp cache dir name must not be longer than the real one to avoid exceeding
-        // the maximum length of a directory or file path within it (esp. Windows MAX_PATH)
-        return substr($realCacheDir, 0, -1) . ('~' === substr($realCacheDir, -1) ? '+' : '~');
-    }
-
-    /**
      * @static
      *
      * @param $class
@@ -754,40 +705,5 @@ class Tool
         }
 
         die($message);
-    }
-
-    /**
-     * @param string $class
-     * @param string $method
-     * @param string $interface
-     */
-    public static function triggerMissingInterfaceDeprecation($class, $method, $interface)
-    {
-        @trigger_error(
-            sprintf(
-                '%s use method %s, but hasn\'t a %s interface. This won\'t work in v6.0.',
-                $class,
-                $method,
-                $interface
-            ),
-            E_USER_DEPRECATED
-        );
-    }
-
-    /**
-     * @param $name
-     * @param $arguments
-     *
-     * @return mixed
-     *
-     * @throws \Exception
-     */
-    public static function __callStatic($name, $arguments)
-    {
-        if (class_exists('Pimcore\\Tool\\Legacy')) {
-            return forward_static_call_array('Pimcore\\Tool\\Legacy::' . $name, $arguments);
-        }
-
-        throw new \Exception('Call to undefined static method ' . $name . ' on class Pimcore\\Tool');
     }
 }

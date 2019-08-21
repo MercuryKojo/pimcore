@@ -36,9 +36,14 @@ class AdvancedManyToManyObjectRelation extends ManyToManyObjectRelation
     public $visibleFields;
 
     /**
-     * @var
+     * @var string[]
      */
     public $columns;
+
+    /**
+     * @var string[]
+     */
+    public $columnKeys;
 
     /**
      * Static type of this element
@@ -63,6 +68,11 @@ class AdvancedManyToManyObjectRelation extends ManyToManyObjectRelation
      * @var bool
      */
     public $allowMultipleAssignments;
+
+    /**
+     * @var array
+     */
+    public $visibleFieldDefinitions = [];
 
     /**
      * @inheritdoc
@@ -698,7 +708,7 @@ class AdvancedManyToManyObjectRelation extends ManyToManyObjectRelation
      * @param $object
      * @param array $params
      *
-     * @return array|mixed|null
+     * @return array
      */
     public function preGetData($object, $params = [])
     {
@@ -1157,7 +1167,7 @@ class AdvancedManyToManyObjectRelation extends ManyToManyObjectRelation
                     ]
 
                 ],
-                'html' => $this->getVersionPreview($originalData, $data, $object, $params)
+                'html' => $this->getVersionPreview($originalData, $object, $params)
             ];
 
             $newData = [];
@@ -1199,3 +1209,5 @@ class AdvancedManyToManyObjectRelation extends ManyToManyObjectRelation
         return $elementType . $id;
     }
 }
+
+class_alias(AdvancedManyToManyObjectRelation::class, 'Pimcore\Model\DataObject\ClassDefinition\Data\ObjectsMetadata');

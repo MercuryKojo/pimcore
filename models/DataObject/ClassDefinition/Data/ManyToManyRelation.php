@@ -27,6 +27,9 @@ class ManyToManyRelation extends AbstractRelations implements QueryResourcePersi
 {
     use Model\DataObject\ClassDefinition\Data\Extension\Relation;
     use Extension\QueryColumnType;
+    use DataObject\ClassDefinition\Data\Relations\AllowObjectRelationTrait;
+    use DataObject\ClassDefinition\Data\Relations\AllowAssetRelationTrait;
+    use DataObject\ClassDefinition\Data\Relations\AllowDocumentRelationTrait;
 
     /**
      * Static type of this element
@@ -706,7 +709,7 @@ class ManyToManyRelation extends AbstractRelations implements QueryResourcePersi
      * @param $object
      * @param array $params
      *
-     * @return array|mixed|null
+     * @return array
      */
     public function preGetData($object, $params = [])
     {
@@ -1060,3 +1063,5 @@ class ManyToManyRelation extends AbstractRelations implements QueryResourcePersi
         return true;
     }
 }
+
+class_alias(ManyToManyRelation::class, 'Pimcore\Model\DataObject\ClassDefinition\Data\Multihref');

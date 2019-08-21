@@ -134,11 +134,11 @@ class Config extends Model\AbstractModel implements \JsonSerializable
         try {
             $report = new self();
             $report->getDao()->getByName($name);
+
+            return $report;
         } catch (\Exception $e) {
             return null;
         }
-
-        return $report;
     }
 
     /**
@@ -321,7 +321,7 @@ class Config extends Model\AbstractModel implements \JsonSerializable
     }
 
     /**
-     * @param \string[] $dataSourceConfig
+     * @param string[] $dataSourceConfig
      */
     public function setDataSourceConfig($dataSourceConfig)
     {
@@ -329,7 +329,7 @@ class Config extends Model\AbstractModel implements \JsonSerializable
     }
 
     /**
-     * @return \string[]
+     * @return string[]
      */
     public function getDataSourceConfig()
     {

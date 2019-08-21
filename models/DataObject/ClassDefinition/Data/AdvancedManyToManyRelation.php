@@ -28,9 +28,14 @@ class AdvancedManyToManyRelation extends ManyToManyRelation
 {
     use DataObject\Traits\ElementWithMetadataComparisonTrait;
     /**
-     * @var
+     * @var string[]
      */
     public $columns;
+
+    /**
+     * @var string[]
+     */
+    public $columnKeys;
 
     /**
      * Static type of this element
@@ -786,7 +791,7 @@ class AdvancedManyToManyRelation extends ManyToManyRelation
      * @param $object
      * @param array $params
      *
-     * @return array|mixed|null
+     * @return array
      */
     public function preGetData($object, $params = [])
     {
@@ -1247,3 +1252,5 @@ class AdvancedManyToManyRelation extends ManyToManyRelation
         $this->enableBatchEdit = $enableBatchEdit;
     }
 }
+
+class_alias(AdvancedManyToManyRelation::class, 'Pimcore\Model\DataObject\ClassDefinition\Data\MultihrefMetadata');

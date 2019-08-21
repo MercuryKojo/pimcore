@@ -50,8 +50,6 @@
     "deactivate_maintenance": "Wartung deaktivieren",
     "code_settings": "Code Einstellungen",
     "advanced_integration": "Fortschrittliche Integration",
-    "personamultiselect": "Persona Mehrfachauswahl",
-    "persona": "Persona",
     "target_group": "Zielgruppe",
     "children": "Kinder",
     "elements_to_export": "Elemente zum Exportieren",
@@ -158,7 +156,7 @@
     "all_roles": "Alle Rollen",
     "add_role": "Rolle hinzufügen",
     "role_creation_error": "Rolle konnte nicht angelegt werden",
-    "workspaces": "Arbeitsbereich/Workspace",
+    "workspaces": "Arbeitsbereiche",
     "Username": "Benutzername",
     "use_current_player_position_as_preview": "Aktuelle Video-Position als Vorschau nutzen.",
     "video_bitrate": "Video Bitrate (kB/s)",
@@ -706,5 +704,10 @@
     "allow_multiple_assignments": "Allow Multiple Assignments",
     "enable_admin_async_load": "Enable Async Load in Admin",
     "async_loading_warning_block": "WARNING: Async Loading is NOT possible within Localized Fields and Blocks",
-    "path_formatter_service": "Formatter Service / Class"
+    "path_formatter_service": "Formatter Service / Class",
+    "tab_position": "Tab Position",
+    "invert_colors_on_login_screen": "Invert Colors on Login Screen",
+    "activate_column_configuration": "Activate Column Configuration",
+    "table_column_configuration": "Column Configuration",
+    "delete_language_note": "Note: Removing language from the list will not delete its respective data. Please use console command 'pimcore:locale:delete-unused-tables' for cleanup."
 }

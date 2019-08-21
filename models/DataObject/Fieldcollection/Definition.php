@@ -54,6 +54,11 @@ class Definition extends Model\AbstractModel
     public $layoutDefinitions;
 
     /**
+     * @var DataObject\ClassDefinition\Data[]
+     */
+    protected $fieldDefinitions;
+
+    /**
      * @return string
      */
     public function getKey()
@@ -242,7 +247,7 @@ class Definition extends Model\AbstractModel
      *
      * @throws \Exception
      *
-     * @return Definition
+     * @return self|null
      */
     public static function getByKey($key)
     {
@@ -269,7 +274,7 @@ class Definition extends Model\AbstractModel
             return $fc;
         }
 
-        throw new \Exception('Field-Collection with key: ' . $key . ' does not exist.');
+        return null;
     }
 
     /**
@@ -319,6 +324,8 @@ class Definition extends Model\AbstractModel
         $cd .= 'namespace Pimcore\\Model\\DataObject\\Fieldcollection\\Data;';
         $cd .= "\n\n";
         $cd .= 'use Pimcore\\Model\\DataObject;';
+        $cd .= "\n";
+        $cd .= 'use Pimcore\Model\DataObject\PreGetValueHookInterface;';
         $cd .= "\n\n";
 
         $cd .= 'class ' . ucfirst($this->getKey()) . ' extends ' . $extendClass . ' implements \\Pimcore\\Model\\DataObject\\DirtyIndicatorInterface {';

@@ -35,7 +35,7 @@ class TestHelper
     public static function checkDbSupport()
     {
         if (!static::supportsDbTests()) {
-            throw new \PHPUnit_Framework_SkippedTestError('Not running test as DB is not connected');
+            throw new \PHPUnit\Framework\SkippedTestError('Not running test as DB is not connected');
         }
     }
 
@@ -168,8 +168,6 @@ class TestHelper
                 }
 
                 if ($document instanceof Document\Page) {
-                    $d['name'] = $document->getName();
-                    $d['keywords'] = $document->getKeywords();
                     $d['title'] = $document->getTitle();
                     $d['description'] = $document->getDescription();
                 }
@@ -751,9 +749,9 @@ class TestHelper
     public static function getAssetCount()
     {
         $list = new Asset\Listing();
-        $childs = $list->load();
+        $children = $list->getAssets();
 
-        return count($childs);
+        return count($children);
     }
 
     /**
@@ -781,5 +779,22 @@ class TestHelper
         $path = __DIR__ . '/../Resources/' . ltrim($path, '/');
 
         return $path;
+    }
+
+    /**
+     * @param int $length
+     *
+     * @return string
+     */
+    public static function generateRandomString($length = 10)
+    {
+        $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        $charactersLength = strlen($characters);
+        $randomString = '';
+        for ($i = 0; $i < $length; $i++) {
+            $randomString .= $characters[rand(0, $charactersLength - 1)];
+        }
+
+        return $randomString;
     }
 }

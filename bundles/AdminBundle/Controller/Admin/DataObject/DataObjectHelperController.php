@@ -876,9 +876,9 @@ class DataObjectHelperController extends AdminController
                 . ' and objectId != ' . $objectId . ' and objectId != 0');
 
             return $this->adminJson(['success' => true]);
-        } else {
-            return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
         }
+
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -935,9 +935,9 @@ class DataObjectHelperController extends AdminController
             }
 
             return $this->adminJson(['success' => true, 'spezializedConfigs' => $specializedConfigs]);
-        } else {
-            return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
         }
+
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -1114,7 +1114,7 @@ class DataObjectHelperController extends AdminController
             }
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -1987,7 +1987,7 @@ class DataObjectHelperController extends AdminController
                 // check for objects bricks and localized fields
                 if (DataObject\Service::isHelperGridColumnConfig($field)) {
                     if ($helperDefinitions[$field]) {
-                        return DataObject\Service::calculateCellValue($object, $helperDefinitions, $field);
+                        return DataObject\Service::calculateCellValue($object, $helperDefinitions, $field, ['language' => $requestedLanguage]);
                     }
                 } elseif (substr($field, 0, 1) == '~') {
                     $type = $fieldParts[1];
@@ -2209,20 +2209,6 @@ class DataObjectHelperController extends AdminController
                                 $csLanguage
                             );
                         }
-                    } else {
-                        $getter = 'get' . ucfirst($field);
-                        $setter = 'set' . ucfirst($field);
-                        $keyValuePairs = $object->$getter();
-
-                        if (!$keyValuePairs) {
-                            $keyValuePairs = new DataObject\Data\KeyValue();
-                            $keyValuePairs->setObjectId($object->getId());
-                            $keyValuePairs->setClass($object->getClass());
-                        }
-
-                        $keyValuePairs->setPropertyWithId($keyid, $value, true);
-
-                        $object->$setter($keyValuePairs);
                     }
                 } elseif (count($parts) > 1) {
                     // check for bricks

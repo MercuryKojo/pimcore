@@ -19,7 +19,7 @@ use Pimcore\Localization\LocaleServiceInterface;
 use Pimcore\Tool;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 
-class Environment implements IEnvironment
+class Environment implements EnvironmentInterface
 {
     const USER_ID_NOT_SET = -1;
 
@@ -240,6 +240,14 @@ class Environment implements IEnvironment
         $this->load();
 
         return $this->getCurrentAssortmentSubTenant();
+    }
+
+    /**
+     * @param Currency $currency
+     */
+    public function setDefaultCurrency(Currency $currency)
+    {
+        $this->defaultCurrency = $currency;
     }
 
     /**

@@ -17,12 +17,17 @@
 
 namespace Pimcore\Model;
 
-use Pimcore\Config;
+use DeepCopy\DeepCopy;
 use Pimcore\Event\Model\VersionEvent;
 use Pimcore\Event\VersionEvents;
 use Pimcore\File;
 use Pimcore\Logger;
 use Pimcore\Model\DataObject\Concrete;
+use Pimcore\Model\Element\ElementInterface;
+use Pimcore\Model\Element\Service;
+use Pimcore\Model\Version\ElementDescriptor;
+use Pimcore\Model\Version\MarshalMatcher;
+use Pimcore\Model\Version\UnmarshalMatcher;
 use Pimcore\Tool\Serialize;
 
 /**
@@ -30,6 +35,9 @@ use Pimcore\Tool\Serialize;
  */
 class Version extends AbstractModel
 {
+    /** @var bool for now&testing, make it possible to disable it */
+    protected static $condenseVersion = true;
+
     /**
      * @var int
      */
@@ -108,14 +116,21 @@ class Version extends AbstractModel
     /**
      * @param int $id
      *
-     * @return Version
+     * @return Version|null
      */
     public static function getById($id)
     {
-        $version = self::getModelFactory()->build(Version::class);
-        $version->getDao()->getById($id);
+        try {
+            /**
+             * @var self $version
+             */
+            $version = self::getModelFactory()->build(Version::class);
+            $version->getDao()->getById($id);
 
-        return $version;
+            return $version;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**
@@ -175,7 +190,10 @@ class Version extends AbstractModel
             $this->setSerialized(true);
 
             $data->_fulldump = true;
-            $dataString = Serialize::serialize($data);
+
+            $condensedData = $this->marshalData($data);
+
+            $dataString = Serialize::serialize($condensedData);
 
             // revert all changed made by __sleep()
             if (method_exists($data, '__wakeup')) {
@@ -198,6 +216,7 @@ class Version extends AbstractModel
 
         // check if directory exists
         $saveDir = dirname($this->getFilePath());
+
         if (!is_dir($saveDir)) {
             File::mkdir($saveDir);
         }
@@ -233,6 +252,71 @@ class Version extends AbstractModel
     }
 
     /**
+     * @param ElementInterface $data
+     *
+     * @return mixed
+     */
+    public function marshalData($data)
+    {
+        if (!self::isCondenseVersionEnabled()) {
+            return $data;
+        }
+
+        $sourceType = Service::getType($data);
+        $sourceId = $data->getId();
+
+        $copier = new DeepCopy();
+        $copier->addTypeFilter(
+            new \DeepCopy\TypeFilter\ReplaceFilter(
+                function ($currentValue) {
+                    if ($currentValue instanceof ElementInterface) {
+                        $elementType = Service::getType($currentValue);
+                        $descriptor = new ElementDescriptor($elementType, $currentValue->getId());
+
+                        return $descriptor;
+                    }
+
+                    return $currentValue;
+                }
+            ),
+            new MarshalMatcher($sourceType, $sourceId)
+        );
+        $copier->addFilter(new \DeepCopy\Filter\Doctrine\DoctrineCollectionFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Doctrine\Common\Collections\Collection'));
+        $copier->addFilter(new \DeepCopy\Filter\SetNullFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Pimcore\Templating\Model\ViewModelInterface'));
+        $copier->addFilter(new \DeepCopy\Filter\SetNullFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Psr\Container\ContainerInterface'));
+        $newData = $copier->copy($data);
+
+        return $newData;
+    }
+
+    /**
+     * @param $data
+     *
+     * @return mixed
+     */
+    public function unmarshalData($data)
+    {
+        $copier = new DeepCopy();
+        $copier->addTypeFilter(
+            new \DeepCopy\TypeFilter\ReplaceFilter(
+                function ($currentValue) {
+                    if ($currentValue instanceof ElementDescriptor) {
+                        $value = Service::getElementById($currentValue->getType(), $currentValue->getId());
+
+                        return $value;
+                    }
+
+                    return $currentValue;
+                }
+            ),
+            new UnmarshalMatcher()
+        );
+        $newData = $copier->copy($data);
+
+        return $newData;
+    }
+
+    /**
      * Delete this Version
      */
     public function delete()
@@ -261,9 +345,11 @@ class Version extends AbstractModel
     /**
      * Object
      *
+     * @param $renewReferences
+     *
      * @return mixed
      */
-    public function loadData()
+    public function loadData($renewReferences = true)
     {
         $data = null;
         $zipped = false;
@@ -302,6 +388,8 @@ class Version extends AbstractModel
 
                 return;
             }
+
+            $data = $this->unmarshalData($data);
         }
 
         if ($data instanceof Concrete) {
@@ -316,7 +404,10 @@ class Version extends AbstractModel
             $data->setData($data->data);
         }
 
-        $data = Element\Service::renewReferences($data);
+        if ($renewReferences) {
+            $data = Element\Service::renewReferences($data);
+        }
+
         $this->setData($data);
 
         return $data;
@@ -364,40 +455,6 @@ class Version extends AbstractModel
     public function getLegacyFilePath()
     {
         return PIMCORE_VERSION_DIRECTORY . '/' . $this->getCtype() . '/' . $this->getId();
-    }
-
-    /**
-     * the cleanup is now done in the maintenance see self::maintenanceCleanUp()
-     *
-     * @deprecated
-     */
-    public function cleanHistory()
-    {
-        if ($this->getCtype() == 'document') {
-            $conf = Config::getSystemConfig()->documents->versions;
-        } elseif ($this->getCtype() == 'asset') {
-            $conf = Config::getSystemConfig()->assets->versions;
-        } elseif ($this->getCtype() == 'object') {
-            $conf = Config::getSystemConfig()->objects->versions;
-        } else {
-            return;
-        }
-
-        $days = [];
-        $steps = [];
-
-        if (intval($conf->days) > 0) {
-            $days = $this->getDao()->getOutdatedVersionsDays($conf->days);
-        } else {
-            $steps = $this->getDao()->getOutdatedVersionsSteps(intval($conf->steps));
-        }
-
-        $versions = array_merge($days, $steps);
-
-        foreach ($versions as $id) {
-            $version = Version::getById($id);
-            $version->delete();
-        }
     }
 
     /**
@@ -663,5 +720,21 @@ class Version extends AbstractModel
     public function setBinaryFileId(?int $binaryFileId): void
     {
         $this->binaryFileId = $binaryFileId;
+    }
+
+    /**
+     * @return bool
+     */
+    public static function isCondenseVersionEnabled()
+    {
+        return self::$condenseVersion;
+    }
+
+    /**
+     * @param bool $condenseVersion
+     */
+    public static function setCondenseVersion($condenseVersion)
+    {
+        self::$condenseVersion = $condenseVersion;
     }
 }

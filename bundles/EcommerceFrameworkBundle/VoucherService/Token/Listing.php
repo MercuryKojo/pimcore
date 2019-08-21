@@ -23,7 +23,7 @@ use Zend\Paginator\AdapterAggregateInterface;
  * @method int getTotalCount()
  * @method \Pimcore\Bundle\EcommerceFrameworkBundle\VoucherService\Token\Listing\Dao getDao()
  */
-class Listing extends \Pimcore\Model\Listing\AbstractListing implements \Zend_Paginator_Adapter_Interface, \Zend_Paginator_AdapterAggregate, \Iterator, AdapterInterface, AdapterAggregateInterface
+class Listing extends \Pimcore\Model\Listing\AbstractListing implements \Iterator, AdapterInterface, AdapterAggregateInterface
 {
     public $tokens;
 
@@ -68,16 +68,12 @@ class Listing extends \Pimcore\Model\Listing\AbstractListing implements \Zend_Pa
                 $this->addConditionParam('length = ?', $filter['length']);
             }
 
-            if ($filter['creation_to'] && $filter['creation_from']) {
-                $this->addConditionParam("Date(timestamp) BETWEEN STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_from']);
-                $this->addConditionParam("STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_to']);
-            } else {
-                if ($filter['creation_from']) {
-                    $this->addConditionParam("DATE(timestamp) >= STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_from']);
-                }
-                if ($filter['creation_to']) {
-                    $this->addConditionParam("DATE(timestamp) <= STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_to']);
-                }
+            if ($filter['creation_from']) {
+                $this->addConditionParam("DATE(timestamp) >= STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_from']);
+            }
+
+            if ($filter['creation_to']) {
+                $this->addConditionParam("DATE(timestamp) <= STR_TO_DATE(?,'%Y-%m-%d')", $filter['creation_to']);
             }
 
             if ($this->isValidOrderKey($filter['sort_criteria'])) {

@@ -98,6 +98,7 @@ class Installer
         'setup_database' => 'Running database setup...',
         'install_assets' => 'Installing assets...',
         'install_classes' => 'Installing classes ...',
+        'install_custom_layouts' => 'Installing custom layouts ...',
         'migrations' => 'Mark existing migrations as done ...',
         'complete' => 'Install complete!'
     ];
@@ -327,14 +328,16 @@ class Installer
 
         $this->dispatchStepEvent('create_config_files');
 
-        $dbConfig['username'] = $dbConfig['user'];
-        unset($dbConfig['user']);
         unset($dbConfig['driver']);
         unset($dbConfig['wrapperClass']);
 
         $this->createConfigFiles([
-            'database' => [
-                'params' => $dbConfig
+            'doctrine' => [
+                'dbal' => [
+                  'connections' => [
+                      'default' => $dbConfig
+                  ],
+                ],
             ],
         ]);
 
@@ -362,6 +365,9 @@ class Installer
         $this->dispatchStepEvent('install_classes');
         $this->installClasses($kernel);
 
+        $this->dispatchStepEvent('install_custom_layouts');
+        $this->installCustomLayouts($kernel);
+
         $this->dispatchStepEvent('migrations');
         $this->markMigrationsAsDone($kernel);
 
@@ -384,7 +390,7 @@ class Installer
 
     private function installClasses(KernelInterface $kernel)
     {
-        $this->logger->info('Running {command} command', ['command' => 'assets:install']);
+        $this->logger->info('Running {command} command', ['command' => 'pimcore:deployment:classes-rebuild']);
         $io = $this->commandLineOutput;
 
         try {
@@ -432,6 +438,56 @@ class Installer
         }
     }
 
+    private function installCustomLayouts(KernelInterface $kernel)
+    {
+        $this->logger->info('Running {command} command', ['command' => 'pimcore:deployment:custom-layouts-rebuild']);
+        $io = $this->commandLineOutput;
+
+        try {
+            $arguments = [
+                Console::getPhpCli(),
+                PIMCORE_PROJECT_ROOT . '/bin/console',
+                'pimcore:deployment:custom-layouts-rebuild',
+                '-c'
+            ];
+
+            $partsBuilder = new PartsBuilder($arguments);
+            $parts = $partsBuilder->getParts();
+
+            $process = new Process($parts);
+            $process->setTimeout(0);
+            $process->setWorkingDirectory(PIMCORE_PROJECT_ROOT);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            if (null !== $io) {
+                $io->writeln($process->getOutput());
+            }
+        } catch (ProcessFailedException $e) {
+            $this->logger->error($e->getMessage());
+
+            if (null === $io) {
+                return;
+            }
+
+            $stdErr = $io->getErrorStyle();
+            $process = $e->getProcess();
+
+            $errorOutput = trim($process->getErrorOutput());
+            if (!empty($errorOutput)) {
+                $stdErr->write($errorOutput);
+            }
+
+            $stdErr->write($process->getOutput());
+            $stdErr->write($process->getErrorOutput());
+            $stdErr->note('Installing custom layouts failed. Please run the following command manually:');
+            $stdErr->writeln('  ' . str_replace("'", '', $process->getCommandLine()));
+        }
+    }
+
     private function installAssets(KernelInterface $kernel)
     {
         $this->logger->info('Running {command} command', ['command' => 'assets:install']);
@@ -474,7 +530,8 @@ class Installer
     private function createConfigFiles(array $config)
     {
         $writer = new ConfigWriter();
-        $writer->writeSystemConfig($config);
+        $writer->writeDbConfig($config);
+        $writer->writeSystemConfig();
         $writer->writeDebugModeConfig();
         $writer->generateParametersFile();
     }

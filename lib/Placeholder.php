@@ -95,48 +95,6 @@ class Placeholder
     }
 
     /**
-     * Sets a custom website class prefix for the Placeholder Classes
-     *
-     * @static
-     *
-     * @param $string
-     *
-     * @deprecated deprecated since version 1.4.6
-     */
-    public static function setWebsiteClassPrefix($string)
-    {
-        self::addPlaceholderClassPrefix($string);
-    }
-
-    /**
-     * Returns the website class prefix for the Placeholder Classes
-     *
-     * @static
-     *
-     * @return string
-     *
-     * @deprecated deprecated since version 1.4.6
-     */
-    public static function getWebsiteClassPrefix()
-    {
-        return self::$placeholderClassPrefixes[1];
-    }
-
-    /**
-     * Set a custom Placeholder prefix
-     *
-     * @throws \Exception
-     *
-     * @param string $prefix
-     *
-     * @deprecated deprecated since version 1.4.6
-     */
-    public static function setPlaceholderPrefix($prefix)
-    {
-        self::addPlaceholderClassPrefix($prefix);
-    }
-
-    /**
      * Returns the Placeholder prefix
      *
      * @return string
@@ -202,7 +160,7 @@ class Placeholder
                         } elseif (!is_array($configArray)) {
                             throw new \Exception('The JSON string in the PlaceholderConfig should be an array.');
                         }
-                        $placeholderConfig = new \Pimcore\Config\Config($configArray, null, ['ignoreconstants' => true]);
+                        $placeholderConfig = new \Pimcore\Config\Config($configArray, null);
                     } catch (\Exception $e) {
                         Logger::warn('PlaceholderConfig is not a valid JSON string. PlaceholderConfig for ' . $placeholderClass . ' ignored.');
                         continue;

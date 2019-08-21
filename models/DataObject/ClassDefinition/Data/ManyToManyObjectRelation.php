@@ -25,6 +25,7 @@ class ManyToManyObjectRelation extends AbstractRelations implements QueryResourc
 {
     use Model\DataObject\ClassDefinition\Data\Extension\Relation;
     use Extension\QueryColumnType;
+    use DataObject\ClassDefinition\Data\Relations\AllowObjectRelationTrait;
 
     /**
      * Static type of this element
@@ -78,6 +79,11 @@ class ManyToManyObjectRelation extends AbstractRelations implements QueryResourc
      * @var bool
      */
     public $optimizedAdminLoading = false;
+
+    /**
+     * @var array
+     */
+    public $visibleFieldDefinitions = [];
 
     /**
      * @return bool
@@ -533,7 +539,7 @@ class ManyToManyObjectRelation extends AbstractRelations implements QueryResourc
      * @param $object
      * @param array $params
      *
-     * @return array|mixed|null
+     * @return array
      */
     public function preGetData($object, $params = [])
     {
@@ -862,7 +868,7 @@ class ManyToManyObjectRelation extends AbstractRelations implements QueryResourc
                     ]
 
                 ],
-                'html' => $this->getVersionPreview($originalData, $data, $object, $params)
+                'html' => $this->getVersionPreview($originalData, $object, $params)
             ];
 
             $newData = [];
@@ -951,3 +957,5 @@ class ManyToManyObjectRelation extends AbstractRelations implements QueryResourc
         $this->optimizedAdminLoading = $optimizedAdminLoading;
     }
 }
+
+class_alias(ManyToManyObjectRelation::class, 'Pimcore\Model\DataObject\ClassDefinition\Data\Objects');

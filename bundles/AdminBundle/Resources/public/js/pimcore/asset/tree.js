@@ -34,7 +34,7 @@ pimcore.asset.tree = Class.create({
                 rootVisible: true,
                 loaderBaseParams: {},
                 treeId: "pimcore_panel_tree_assets",
-                treeIconCls: "pimcore_icon_asset",
+                treeIconCls: "pimcore_icon_main_tree_asset pimcore_icon_material",
                 treeTitle: t('assets'),
                 parentPanel: Ext.getCmp("pimcore_panel_tree_" + this.position),
             };
@@ -90,7 +90,8 @@ pimcore.asset.tree = Class.create({
                 extraParams: {
                     limit: itemsPerPage,
                     view: this.config.customViewId
-                }
+                },
+                timeout: 60000
             },
             pageSize: itemsPerPage,
             root: rootNodeConfig
@@ -106,6 +107,7 @@ pimcore.asset.tree = Class.create({
             id: this.config.treeId,
             title: this.config.treeTitle,
             iconCls: this.config.treeIconCls,
+            cls: this.config['rootVisible'] ? '' : 'pimcore_tree_no_root_node',
             autoScroll:true,
             animate:false,
             containerScroll: true,

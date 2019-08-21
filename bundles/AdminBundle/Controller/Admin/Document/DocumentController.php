@@ -81,7 +81,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
             return $this->adminJson($data);
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -224,7 +224,6 @@ class DocumentController extends ElementControllerBase implements EventedControl
                     $createValues['controller'] = $docType->getController();
                     $createValues['action'] = $docType->getAction();
                     $createValues['module'] = $docType->getModule();
-                    $createValues['legacy'] = $docType->getLegacy();
                 } elseif ($request->get('translationsBaseDocument')) {
                     $translationsBaseDocument = Document::getById($request->get('translationsBaseDocument'));
                     $createValues['template'] = $translationsBaseDocument->getTemplate();
@@ -243,7 +242,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
                     case 'page':
                         $document = Document\Page::create($request->get('parentId'), $createValues, false);
                         $document->setTitle($request->get('title', null));
-                        $document->setProperty('navigation_name', 'text', $request->get('name', null), false);
+                        $document->setProperty('navigation_name', 'text', $request->get('name', null), false, false);
                         $document->save();
                         $success = true;
                         break;
@@ -357,7 +356,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
 
             $deletedItems = [];
             foreach ($documents as $document) {
-                $deletedItems[] = $document->getRealFullPath();
+                $deletedItems[$document->getId()] = $document->getRealFullPath();
                 if ($document->isAllowed('delete') && !$document->isLocked()) {
                     $document->delete();
                 }
@@ -366,7 +365,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
             return $this->adminJson(['success' => true, 'deleted' => $deletedItems]);
         } elseif ($request->get('id')) {
             $document = Document::getById($request->get('id'));
-            if ($document->isAllowed('delete')) {
+            if ($document && $document->isAllowed('delete')) {
                 try {
                     if ($document->isLocked()) {
                         throw new \Exception('prevented deleting document, because it is locked: ID: ' . $document->getId());
@@ -382,7 +381,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
             }
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -932,8 +931,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
                 }
             } else {
                 Logger::error('could not execute copy/paste because of missing permissions on target [ ' . $targetId . ' ]');
-
-                return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+                throw $this->createAccessDeniedHttpException();
             }
         }
 
@@ -1059,7 +1057,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
         // set type specific settings
         if ($childDocument->getType() == 'page') {
             $tmpDocument['leaf'] = false;
-            $tmpDocument['expanded'] = $childDocument->hasNoChilds();
+            $tmpDocument['expanded'] = !$childDocument->hasChildren();
             $tmpDocument['permissions']['create'] = $childDocument->isAllowed('create');
             $tmpDocument['iconCls'] = 'pimcore_icon_page';
 
@@ -1071,9 +1069,9 @@ class DocumentController extends ElementControllerBase implements EventedControl
             }
         } elseif ($childDocument->getType() == 'folder' || $childDocument->getType() == 'link' || $childDocument->getType() == 'hardlink') {
             $tmpDocument['leaf'] = false;
-            $tmpDocument['expanded'] = $childDocument->hasNoChilds();
+            $tmpDocument['expanded'] = !$childDocument->hasChildren();
 
-            if ($childDocument->hasNoChilds() && $childDocument->getType() == 'folder') {
+            if (!$childDocument->hasChildren() && $childDocument->getType() == 'folder') {
                 $tmpDocument['iconCls'] = 'pimcore_icon_folder';
             }
             $tmpDocument['permissions']['create'] = $childDocument->isAllowed('create');
@@ -1173,7 +1171,7 @@ class DocumentController extends ElementControllerBase implements EventedControl
             return $this->adminJson($nodeConfig);
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -1450,6 +1448,14 @@ class DocumentController extends ElementControllerBase implements EventedControl
         $targetDocument = Document::getByPath($request->get('targetPath'));
 
         if ($sourceDocument && $targetDocument) {
+            if (empty($sourceDocument->getProperty('language'))) {
+                throw new \Exception(sprintf('Source Document(ID:%s) Language(Properties) missing', $sourceDocument->getId()));
+            }
+
+            if (empty($targetDocument->getProperty('language'))) {
+                throw new \Exception(sprintf('Target Document(ID:%s) Language(Properties) missing', $sourceDocument->getId()));
+            }
+
             $service = new Document\Service;
             if ($service->getTranslationSourceId($targetDocument) != $targetDocument->getId()) {
                 throw new \Exception('Target Document already linked to Source Document ID('.$service->getTranslationSourceId($targetDocument).'). Please unlink existing relation first.');

@@ -16,6 +16,7 @@ namespace Pimcore\Bundle\AdminBundle\Controller\Admin;
 
 use Pimcore\Controller\Configuration\TemplatePhp;
 use Pimcore\Controller\EventedControllerInterface;
+use Pimcore\Controller\Traits\ElementEditLockHelperTrait;
 use Pimcore\Db;
 use Pimcore\Event\AdminEvents;
 use Pimcore\Event\AssetEvents;
@@ -42,6 +43,8 @@ use Symfony\Component\Routing\Annotation\Route;
  */
 class AssetController extends ElementControllerBase implements EventedControllerInterface
 {
+    use ElementEditLockHelperTrait;
+
     /**
      * @var Asset\Service
      */
@@ -59,9 +62,7 @@ class AssetController extends ElementControllerBase implements EventedController
 
         // check for lock
         if (Element\Editlock::isLocked($request->get('id'), 'asset')) {
-            return $this->adminJson([
-                'editlock' => Element\Editlock::getByElement($request->get('id'), 'asset')
-            ]);
+            return $this->getEditLockResponse($request->get('id'), 'asset');
         }
         Element\Editlock::lock($request->get('id'), 'asset');
 
@@ -137,6 +138,7 @@ class AssetController extends ElementControllerBase implements EventedController
         $data['filesizeFormatted'] = $asset->getFileSize(true);
         $data['filesize'] = $asset->getFileSize();
         $data['url'] = Tool::getHostUrl(null, $request) . $asset->getRealFullPath();
+        $data['fileExtension'] = File::getFileExtension($asset->getFilename());
 
         $data['php'] = [
             'classes' => array_merge([get_class($asset)], array_values(class_parents($asset))),
@@ -154,7 +156,7 @@ class AssetController extends ElementControllerBase implements EventedController
             return $this->adminJson($data);
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -327,7 +329,7 @@ class AssetController extends ElementControllerBase implements EventedController
     protected function addAsset(Request $request)
     {
         $success = false;
-        $defaultUploadPath = $this->getParameter('pimcore.config')['assets']['defaultUploadPath'];
+        $defaultUploadPath = $this->getParameter('pimcore.config')['assets']['default_upload_path'];
 
         if (array_key_exists('Filedata', $_FILES)) {
             $filename = $_FILES['Filedata']['name'];
@@ -561,14 +563,12 @@ class AssetController extends ElementControllerBase implements EventedController
             $list->setOrderKey('LENGTH(path)', false);
             $list->setOrder('DESC');
 
-            $assets = $list->load();
-
             $deletedItems = [];
-            foreach ($assets as $asset) {
+            foreach ($list as $asset) {
                 /**
                  * @var $asset Asset
                  */
-                $deletedItems[] = $asset->getRealFullPath();
+                $deletedItems[$asset->getId()] = $asset->getRealFullPath();
                 if ($asset->isAllowed('delete') && !$asset->isLocked()) {
                     $asset->delete();
                 }
@@ -577,19 +577,21 @@ class AssetController extends ElementControllerBase implements EventedController
             return $this->adminJson(['success' => true, 'deleted' => $deletedItems]);
         } elseif ($request->get('id')) {
             $asset = Asset::getById($request->get('id'));
+            if ($asset && $asset->isAllowed('delete')) {
+                if ($asset->isLocked()) {
+                    return $this->adminJson([
+                        'success' => false,
+                        'message' => 'prevented deleting asset, because it is locked: ID: ' . $asset->getId()
+                    ]);
+                } else {
+                    $asset->delete();
 
-            if (!$asset->isAllowed('delete')) {
-                return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
-            } elseif ($asset->isLocked()) {
-                return $this->adminJson(['success' => false, 'message' => 'prevented deleting asset, because it is locked: ID: ' . $asset->getId()]);
-            } else {
-                $asset->delete();
-
-                return $this->adminJson(['success' => true]);
+                    return $this->adminJson(['success' => true]);
+                }
             }
         }
 
-        return $this->adminJson(['success' => false, 'message' => 'missing_permission']);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -625,8 +627,8 @@ class AssetController extends ElementControllerBase implements EventedController
         // set type specific settings
         if ($asset->getType() == 'folder') {
             $tmpAsset['leaf'] = false;
-            $tmpAsset['expanded'] = $asset->hasNoChilds();
-            $tmpAsset['loaded'] = $asset->hasNoChilds();
+            $tmpAsset['expanded'] = !$asset->hasChildren();
+            $tmpAsset['loaded'] = !$asset->hasChildren();
             $tmpAsset['iconCls'] = 'pimcore_icon_folder';
             $tmpAsset['permissions']['create'] = $asset->isAllowed('create');
 
@@ -758,7 +760,7 @@ class AssetController extends ElementControllerBase implements EventedController
         if ($asset->isAllowed('settings')) {
             $asset->setUserModification($this->getAdminUser()->getId());
 
-            // if the position is changed the path must be changed || also from the childs
+            // if the position is changed the path must be changed || also from the children
             if ($request->get('parentId')) {
                 $parentAsset = Asset::getById($request->get('parentId'));
 
@@ -867,112 +869,98 @@ class AssetController extends ElementControllerBase implements EventedController
      */
     public function saveAction(Request $request)
     {
-        try {
-            $success = false;
-            if ($request->get('id')) {
-                $asset = Asset::getById($request->get('id'));
-                if ($asset->isAllowed('publish')) {
+        if ($request->get('id')) {
+            $asset = Asset::getById($request->get('id'));
+            if ($asset->isAllowed('publish')) {
 
-                    // metadata
-                    if ($request->get('metadata')) {
-                        $metadata = $this->decodeJson($request->get('metadata'));
-                        $metadata = Asset\Service::minimizeMetadata($metadata);
-                        $asset->setMetadata($metadata);
-                    }
-
-                    // properties
-                    if ($request->get('properties')) {
-                        $properties = [];
-                        $propertiesData = $this->decodeJson($request->get('properties'));
-
-                        if (is_array($propertiesData)) {
-                            foreach ($propertiesData as $propertyName => $propertyData) {
-                                $value = $propertyData['data'];
-
-                                try {
-                                    $property = new Model\Property();
-                                    $property->setType($propertyData['type']);
-                                    $property->setName($propertyName);
-                                    $property->setCtype('asset');
-                                    $property->setDataFromEditmode($value);
-                                    $property->setInheritable($propertyData['inheritable']);
-
-                                    $properties[$propertyName] = $property;
-                                } catch (\Exception $e) {
-                                    Logger::err("Can't add " . $propertyName . ' to asset ' . $asset->getRealFullPath());
-                                }
-                            }
-
-                            $asset->setProperties($properties);
-                        }
-                    }
-
-                    // scheduled tasks
-                    if ($request->get('scheduler')) {
-                        $tasks = [];
-                        $tasksData = $this->decodeJson($request->get('scheduler'));
-
-                        if (!empty($tasksData)) {
-                            foreach ($tasksData as $taskData) {
-                                $taskData['date'] = strtotime($taskData['date'] . ' ' . $taskData['time']);
-
-                                $task = new Model\Schedule\Task($taskData);
-                                $tasks[] = $task;
-                            }
-                        }
-
-                        $asset->setScheduledTasks($tasks);
-                    }
-
-                    if ($request->get('data')) {
-                        $asset->setData($request->get('data'));
-                    }
-
-                    // image specific data
-                    if ($asset instanceof Asset\Image) {
-                        if ($request->get('image')) {
-                            $imageData = $this->decodeJson($request->get('image'));
-                            if (isset($imageData['focalPoint'])) {
-                                $asset->setCustomSetting('focalPointX', $imageData['focalPoint']['x']);
-                                $asset->setCustomSetting('focalPointY', $imageData['focalPoint']['y']);
-                            }
-                        } else {
-                            // wipe all data
-                            $asset->removeCustomSetting('focalPointX');
-                            $asset->removeCustomSetting('focalPointY');
-                        }
-                    }
-
-                    $asset->setUserModification($this->getAdminUser()->getId());
-
-                    try {
-                        $asset->save();
-                        $success = true;
-                    } catch (\Exception $e) {
-                        if ($e instanceof Element\ValidationException) {
-                            throw $e;
-                        }
-
-                        return $this->adminJson(['success' => false, 'message' => $e->getMessage()]);
-                    }
-                } else {
-                    Logger::debug('prevented save asset because of missing permissions ');
+                // metadata
+                if ($request->get('metadata')) {
+                    $metadata = $this->decodeJson($request->get('metadata'));
+                    $metadata = Asset\Service::minimizeMetadata($metadata);
+                    $asset->setMetadata($metadata);
                 }
 
-                return $this->adminJson(['success' => $success,
-                    'data' => ['versionDate' => $asset->getModificationDate(),
-                                'versionCount' => $asset->getVersionCount()
-                ]]);
-            }
+                // properties
+                if ($request->get('properties')) {
+                    $properties = [];
+                    $propertiesData = $this->decodeJson($request->get('properties'));
 
-            return $this->adminJson(false);
-        } catch (\Exception $e) {
-            Logger::log($e);
-            if ($e instanceof Element\ValidationException) {
-                return $this->adminJson(['success' => false, 'type' => 'ValidationException', 'message' => $e->getMessage(), 'stack' => $e->getTraceAsString(), 'code' => $e->getCode()]);
+                    if (is_array($propertiesData)) {
+                        foreach ($propertiesData as $propertyName => $propertyData) {
+                            $value = $propertyData['data'];
+
+                            try {
+                                $property = new Model\Property();
+                                $property->setType($propertyData['type']);
+                                $property->setName($propertyName);
+                                $property->setCtype('asset');
+                                $property->setDataFromEditmode($value);
+                                $property->setInheritable($propertyData['inheritable']);
+
+                                $properties[$propertyName] = $property;
+                            } catch (\Exception $e) {
+                                Logger::err("Can't add " . $propertyName . ' to asset ' . $asset->getRealFullPath());
+                            }
+                        }
+
+                        $asset->setProperties($properties);
+                    }
+                }
+
+                // scheduled tasks
+                if ($request->get('scheduler')) {
+                    $tasks = [];
+                    $tasksData = $this->decodeJson($request->get('scheduler'));
+
+                    if (!empty($tasksData)) {
+                        foreach ($tasksData as $taskData) {
+                            $taskData['date'] = strtotime($taskData['date'] . ' ' . $taskData['time']);
+
+                            $task = new Model\Schedule\Task($taskData);
+                            $tasks[] = $task;
+                        }
+                    }
+
+                    $asset->setScheduledTasks($tasks);
+                }
+
+                if ($request->get('data')) {
+                    $asset->setData($request->get('data'));
+                }
+
+                // image specific data
+                if ($asset instanceof Asset\Image) {
+                    if ($request->get('image')) {
+                        $imageData = $this->decodeJson($request->get('image'));
+                        if (isset($imageData['focalPoint'])) {
+                            $asset->setCustomSetting('focalPointX', $imageData['focalPoint']['x']);
+                            $asset->setCustomSetting('focalPointY', $imageData['focalPoint']['y']);
+                            $asset->removeCustomSetting('disableFocalPointDetection');
+                        }
+                    } else {
+                        // wipe all data
+                        $asset->removeCustomSetting('focalPointX');
+                        $asset->removeCustomSetting('focalPointY');
+                        $asset->setCustomSetting('disableFocalPointDetection', true);
+                    }
+                }
+
+                $asset->setUserModification($this->getAdminUser()->getId());
+                $asset->save();
+
+                return $this->adminJson([
+                    'success' => true,
+                    'data' => [
+                        'versionDate' => $asset->getModificationDate(),
+                        'versionCount' => $asset->getVersionCount()
+                    ]
+                ]);
+            } else {
+                throw $this->createAccessDeniedHttpException();
             }
-            throw $e;
         }
+
+        throw $this->createNotFoundException();
     }
 
     /**
@@ -999,7 +987,7 @@ class AssetController extends ElementControllerBase implements EventedController
             }
         }
 
-        return $this->adminJson(false);
+        throw $this->createAccessDeniedHttpException();
     }
 
     /**
@@ -1327,10 +1315,7 @@ class AssetController extends ElementControllerBase implements EventedController
         $thumb = $document->getImageThumbnail($thumbnail, $page);
         $thumbnailFile = $thumb->getFileSystemPath();
 
-        $format = 'png';
-
         $response = new BinaryFileResponse($thumbnailFile);
-        $response->headers->set('Content-type', 'image/' . $format);
         $this->addThumbnailCacheHeaders($response);
 
         return $response;
@@ -1551,7 +1536,7 @@ class AssetController extends ElementControllerBase implements EventedController
         if (!$this->getAdminUser()->isAdmin()) {
             $userIds = $this->getAdminUser()->getRoles();
             $userIds[] = $this->getAdminUser()->getId();
-            $conditionFilters[] .= ' (
+            $conditionFilters[] = ' (
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(CONCAT(path, filename),cpath)=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
                                                     OR
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(cpath,CONCAT(path, filename))=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
@@ -1751,8 +1736,7 @@ class AssetController extends ElementControllerBase implements EventedController
             }
         } else {
             Logger::error('could not execute copy/paste because of missing permissions on target [ ' . $targetId . ' ]');
-
-            return $this->adminJson(['error' => false, 'message' => 'missing_permission']);
+            throw $this->createAccessDeniedHttpException();
         }
 
         Tool\Session::writeClose();
@@ -1793,11 +1777,11 @@ class AssetController extends ElementControllerBase implements EventedController
                 //add a condition if id numbers are specified
                 $conditionFilters[] = 'id IN (' . implode(',', $quotedSelectedIds) . ')';
             }
-            $conditionFilters[] .= 'path LIKE ' . $db->quote($parentPath . '/%') .' AND type != ' . $db->quote('folder');
+            $conditionFilters[] = 'path LIKE ' . $db->quote($parentPath . '/%') .' AND type != ' . $db->quote('folder');
             if (!$this->getAdminUser()->isAdmin()) {
                 $userIds = $this->getAdminUser()->getRoles();
                 $userIds[] = $this->getAdminUser()->getId();
-                $conditionFilters[] .= ' (
+                $conditionFilters[] = ' (
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(CONCAT(path, filename),cpath)=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
                                                     OR
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(cpath,CONCAT(path, filename))=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
@@ -1870,11 +1854,11 @@ class AssetController extends ElementControllerBase implements EventedController
                     //add a condition if id numbers are specified
                     $conditionFilters[] = 'id IN (' . implode(',', $selectedIds) . ')';
                 }
-                $conditionFilters[] .= "type != 'folder' AND path LIKE " . $db->quote($parentPath . '/%');
+                $conditionFilters[] = "type != 'folder' AND path LIKE " . $db->quote($parentPath . '/%');
                 if (!$this->getAdminUser()->isAdmin()) {
                     $userIds = $this->getAdminUser()->getRoles();
                     $userIds[] = $this->getAdminUser()->getId();
-                    $conditionFilters[] .= ' (
+                    $conditionFilters[] = ' (
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(CONCAT(path, filename),cpath)=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
                                                     OR
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(cpath,CONCAT(path, filename))=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
@@ -1889,7 +1873,7 @@ class AssetController extends ElementControllerBase implements EventedController
                 $assetList->setOffset((int)$request->get('offset'));
                 $assetList->setLimit((int)$request->get('limit'));
 
-                foreach ($assetList->load() as $a) {
+                foreach ($assetList as $a) {
                     if ($a->isAllowed('view')) {
                         if (!$a instanceof Asset\Folder) {
                             // add the file with the relative path to the parent directory
@@ -2333,7 +2317,7 @@ class AssetController extends ElementControllerBase implements EventedController
             if (!$this->getAdminUser()->isAdmin()) {
                 $userIds = $this->getAdminUser()->getRoles();
                 $userIds[] = $this->getAdminUser()->getId();
-                $conditionFilters[] .= ' (
+                $conditionFilters[] = ' (
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(CONCAT(path, filename),cpath)=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1
                                                     OR
                                                     (select list from users_workspaces_asset where userId in (' . implode(',', $userIds) . ') and LOCATE(cpath,CONCAT(path, filename))=1  ORDER BY LENGTH(cpath) DESC LIMIT 1)=1

@@ -20,6 +20,7 @@ namespace Pimcore\Model\DataObject\Objectbrick\Data;
 use Pimcore\Model;
 use Pimcore\Model\DataObject;
 use Pimcore\Model\DataObject\Concrete;
+use Pimcore\Model\DataObject\Exception\InheritanceParentNotFoundException;
 
 /**
  * @method Dao getDao()
@@ -27,6 +28,13 @@ use Pimcore\Model\DataObject\Concrete;
 abstract class AbstractData extends Model\AbstractModel implements Model\DataObject\LazyLoadedFieldsInterface
 {
     use Model\DataObject\Traits\LazyLoadedRelationTrait;
+
+    /**
+     * Will be overriden by the actual ObjectBrick
+     *
+     * @var string
+     */
+    protected $type;
 
     /**
      * @var string
@@ -148,6 +156,8 @@ abstract class AbstractData extends Model\AbstractModel implements Model\DataObj
      * @param $key
      *
      * @return mixed
+     *
+     * @throws InheritanceParentNotFoundException
      */
     public function getValueFromParent($key)
     {
@@ -163,7 +173,7 @@ abstract class AbstractData extends Model\AbstractModel implements Model\DataObj
             }
         }
 
-        return null;
+        throw new InheritanceParentNotFoundException('No parent object available to get a value from');
     }
 
     /**

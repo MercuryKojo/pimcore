@@ -20,8 +20,6 @@ namespace Pimcore\Model\Document\Tag;
 use Pimcore\Model;
 use Pimcore\Tool\Text;
 
-include_once(PIMCORE_PATH . '/lib/simple_html_dom.php');
-
 /**
  * @method \Pimcore\Model\Document\Tag\Dao getDao()
  */
@@ -130,10 +128,7 @@ class Wysiwyg extends Model\Document\Tag
      */
     public function getFromWebserviceImport($wsElement, $document = null, $params = [], $idMapper = null)
     {
-        $data = $wsElement->value;
-        if (is_array($data)) {
-            $data = (object) $data;
-        }
+        $data = $this->sanitizeWebserviceData($wsElement->value);
 
         if ($data->text === null or is_string($data->text)) {
             $this->text = $data->text;

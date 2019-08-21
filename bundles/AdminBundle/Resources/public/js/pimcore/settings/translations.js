@@ -130,7 +130,7 @@ pimcore.settings.translations = Class.create({
         })
         ;
 
-        if (pimcore.settings.websiteLanguages.length == this.editableLanguages.length) {
+        if (pimcore.settings.websiteLanguages.length == this.editableLanguages.length || this.translationType === 'admin') {
             typesColumns.push({
                 xtype: 'actioncolumn',
                 menuText: t('delete'),
@@ -190,7 +190,7 @@ pimcore.settings.translations = Class.create({
         });
 
         var toolbar = Ext.create('Ext.Toolbar', {
-            cls: 'main-toolbar',
+            cls: 'pimcore_main_toolbar',
             items: [
                 {
                     text: t('add'),
@@ -357,7 +357,7 @@ pimcore.settings.translations = Class.create({
                     items: [this.csvSettingsPanel.getPanel()],
                     buttons: [{
                         text: t("cancel"),
-                        iconCls: "pimcore_icon_delete",
+                        iconCls: "pimcore_icon_cancel",
                         handler: function () {
                             win.close();
                         }

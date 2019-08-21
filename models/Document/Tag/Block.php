@@ -166,19 +166,6 @@ class Block extends Model\Document\Tag implements BlockInterface
     }
 
     /**
-     * Alias for loop
-     *
-     * @deprecated
-     * @see loop()
-     *
-     * @return bool
-     */
-    public function enumerate()
-    {
-        return $this->loop();
-    }
-
-    /**
      * @inheritDoc
      */
     protected function getEditmodeElementAttributes(array $options): array
@@ -373,7 +360,7 @@ class Block extends Model\Document\Tag implements BlockInterface
      */
     public function getFromWebserviceImport($wsElement, $document = null, $params = [], $idMapper = null)
     {
-        $data = $wsElement->value;
+        $data = $this->sanitizeWebserviceData($wsElement->value);
         if (($data->indices === null or is_array($data->indices)) and ($data->current == null or is_numeric($data->current))) {
             $this->indices = $data->indices;
             $this->current = $data->current;

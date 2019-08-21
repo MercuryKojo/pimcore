@@ -321,7 +321,7 @@ class Thumbnail
                 $format = Thumbnail\Processor::getAllowedFormat($fileExt, ['jpeg', 'gif', 'png'], 'png');
             } elseif ($targetFormat == 'print') {
                 $format = Thumbnail\Processor::getAllowedFormat($fileExt, ['svg', 'jpeg', 'png', 'tiff'], 'png');
-                if (($format == 'tiff' || $format == 'svg') && \Pimcore\Tool::isFrontentRequestByAdmin()) {
+                if (($format == 'tiff' || $format == 'svg') && \Pimcore\Tool::isFrontendRequestByAdmin()) {
                     // return a webformat in admin -> tiff cannot be displayed in browser
                     $format = 'png';
                 }
@@ -501,19 +501,15 @@ class Thumbnail
         }
 
         $isLowQualityPreview = false;
-        $lowQualityPreviewFile = $this->getAsset()->getLowQualityPreviewFileSystemPath();
         if (
-            (
-                (isset($options['svgPlaceholder']) && $options['svgPlaceholder']) // @deprecated config option
-                || (isset($options['lowQualityPlaceholder']) && $options['lowQualityPlaceholder'])
-            )
-            && file_exists($lowQualityPreviewFile)
+            (isset($options['lowQualityPlaceholder']) && $options['lowQualityPlaceholder'])
+            && ($previewDataUri = $this->getAsset()->getLowQualityPreviewDataUri())
             && !Tool::isFrontendRequestByAdmin()
         ) {
             $isLowQualityPreview = true;
             $attributes['data-src'] = $attributes['src'];
             $attributes['data-srcset'] = $attributes['srcset'];
-            $attributes['src'] = 'data:image/svg+xml;base64,' . base64_encode(file_get_contents($lowQualityPreviewFile));
+            $attributes['src'] = $previewDataUri;
             unset($attributes['srcset']);
         }
 

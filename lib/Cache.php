@@ -16,7 +16,6 @@ namespace Pimcore;
 
 use Pimcore\Cache\Core\CoreHandlerInterface;
 use Pimcore\Event\CoreCacheEvents;
-use Pimcore\FeatureToggles\Features\DebugMode;
 use Symfony\Component\EventDispatcher\Event;
 
 /**
@@ -58,7 +57,7 @@ class Cache
                 ->get('event_dispatcher')
                 ->dispatch(CoreCacheEvents::INIT, new Event());
 
-            if (isset($_REQUEST['pimcore_nocache']) && \Pimcore::inDebugMode(DebugMode::MAGIC_PARAMS)) {
+            if (isset($_REQUEST['pimcore_nocache']) && \Pimcore::inDebugMode()) {
                 self::getHandler()->disable();
             }
         }
@@ -191,22 +190,6 @@ class Cache
     public static function removeIgnoredTagOnClear($tag)
     {
         static::getHandler()->removeTagIgnoredOnClear($tag);
-    }
-
-    /**
-     * @deprecated Use addIgnoredTagOnSave() instead
-     *
-     * @param string $tag
-     */
-    public static function addClearedTag($tag)
-    {
-        static::getHandler()->getLogger()->warning('addClearedTag is deprecated, please use addIngoredTagOnSave instead', [
-            'tag' => $tag
-        ]);
-
-        // instead of messing with the internal cleared tags property, we expose a
-        // dedicated property for tags which should be ignored on save
-        static::addIgnoredTagOnSave($tag);
     }
 
     /**

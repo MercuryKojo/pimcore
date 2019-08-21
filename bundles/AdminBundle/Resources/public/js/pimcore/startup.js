@@ -186,6 +186,48 @@ Ext.onReady(function () {
     Ext.Ajax.on('requestexception', function (conn, response, options) {
         console.log("xhr request failed");
 
+        var jsonData = null;
+        try {
+            jsonData = Ext.decode(response.responseText);
+        } catch (e) {
+
+        }
+
+        var date = new Date();
+        var errorMessage = "Timestamp: " + date.toString() + "\n";
+        var errorDetailMessage = "\n" + response.responseText;
+
+        try {
+            errorMessage += "Status: " + response.status + " | " + response.statusText + "\n";
+            errorMessage += "URL: " + options.url + "\n";
+
+            if (options["params"] && options["params"].length > 0) {
+                errorMessage += "Params:\n";
+                Ext.iterate(options.params, function (key, value) {
+                    errorMessage += ("-> " + key + ": " + value.substr(0, 500) + "\n");
+                });
+            }
+
+            if (options["method"]) {
+                errorMessage += "Method: " + options.method + "\n";
+            }
+
+            if(jsonData) {
+                if (jsonData['message']) {
+                    errorDetailMessage = jsonData['message'];
+                }
+
+                if(jsonData['traceString']) {
+                    errorDetailMessage += "\nTrace: \n" + jsonData['traceString'];
+                }
+            }
+
+            errorMessage += "Message: " + errorDetailMessage;
+        } catch (e) {
+            errorMessage += "\n\n";
+            errorMessage += response.responseText;
+        }
+
         if (!response.aborted && options["ignoreErrors"] !== true) {
             if (response.status === 503) {
                 //show wait info
@@ -201,51 +243,19 @@ Ext.onReady(function () {
                     pimcore.viewport.add(pimcore.maintenanceWindow);
                     pimcore.maintenanceWindow.show();
                 }
+            } else if (response.status === 403) {
+                if(jsonData && jsonData['type'] === 'ValidationException') {
+                    pimcore.helpers.showNotification(t("validation_failed"), jsonData['message'], "error", errorMessage);
+                } else {
+                    pimcore.helpers.showNotification(t("access_denied"), t("access_denied_description"), "error");
+                }
             } else {
-                //do not remove notification, otherwise user is never informed about server exception (e.g. element cannot
-                // be saved due to HTTP 500 Response)
-                var date = new Date();
-                var errorMessage = "Timestamp: " + date.toString() + "\n";
-                var errorDetailMessage = "\n" + response.responseText;
-
-                try {
-                    errorMessage += "Status: " + response.status + " | " + response.statusText + "\n";
-                    errorMessage += "URL: " + options.url + "\n";
-
-                    if (options["params"] && options["params"].length > 0) {
-                        errorMessage += "Params:\n";
-                        Ext.iterate(options.params, function (key, value) {
-                            errorMessage += ("-> " + key + ": " + value.substr(0, 500) + "\n");
-                        });
-                    }
-
-                    if (options["method"]) {
-                        errorMessage += "Method: " + options.method + "\n";
-                    }
-
-                    try {
-                        var json = Ext.util.JSON.decode(response.responseText);
-
-                        if (json) {
-                            if ('undefined' !== typeof json.message && json.message.length > 0) {
-                                errorDetailMessage = json.message;
-                            }
-
-                            if(json['traceString']) {
-                                errorDetailMessage += "\nTrace: \n" + json['traceString'];
-                            }
-                        }
-                    } catch (e) {
-                        // noop, just fall back to generic error message (whole response text)
-                    }
-
-                    errorMessage += "Message: " + errorDetailMessage;
-                } catch (e) {
-                    errorMessage += "\n\n";
-                    errorMessage += response.responseText;
+                var message = t("error_general");
+                if(jsonData['message']) {
+                    message = jsonData['message'] + "<br><br>" + t("error_general");
                 }
 
-                pimcore.helpers.showNotification(t("error"), t("error_general"), "error", errorMessage);
+                pimcore.helpers.showNotification(t("error"), message, "error", errorMessage);
             }
         }
 
@@ -276,8 +286,22 @@ Ext.onReady(function () {
     Ext.define('pimcore.model.doctypes', {
         extend: 'Ext.data.Model',
         fields: [
-            'id',  {name: 'name', allowBlank: false}, 'module', 'controller', 'action', 'template',
-            {name: 'type', allowBlank: false},'priority', 'creationDate', 'modificationDate', 'legacy'
+            'id',
+            {name: 'name', allowBlank: false},
+            {
+                name: "translatedName",
+                convert: function (v, rec) {
+                    return t(rec.get("name"));
+                }
+            },
+            'module',
+            'controller',
+            'action',
+            'template',
+            {name: 'type', allowBlank: false},
+            'priority',
+            'creationDate',
+            'modificationDate'
         ],
         proxy: {
             type: 'ajax',
@@ -442,26 +466,6 @@ Ext.onReady(function () {
     targetGroupStore.load();
     pimcore.globalmanager.add("target_group_store", targetGroupStore);
 
-    // STATUSBAR
-    // check for devmode
-    if (pimcore.settings.devmode) {
-        Ext.get("pimcore_status_dev").show();
-    }
-
-    // check for debug
-    if (pimcore.settings.debug) {
-        Ext.get("pimcore_status_debug").show();
-    }
-
-    // check for maintenance
-    if (!pimcore.settings.maintenance_active) {
-        Ext.get("pimcore_status_maintenance").show();
-    }
-
-    //check for mail settings
-    if (!pimcore.settings.mail) {
-        Ext.get("pimcore_status_email").show();
-    }
 
     // check for updates
     window.setTimeout(function () {
@@ -498,36 +502,31 @@ Ext.onReady(function () {
         }).done(function(data) {
             if (data['latestVersion']) {
                 if(pimcore.currentuser.admin) {
-                    Ext.get("pimcore_status_update").show();
 
-                    var lastOpened = localStorage.getItem("pimcore_version_notice");
-                    var now = new Date().getTime();
-                    if((!lastOpened || (now-(86400*7)) > lastOpened)) {
-                        localStorage.setItem("pimcore_version_notice", now);
+                    pimcore.notification.helper.incrementCount();
 
-                        jQuery("#pimcore_status_update").trigger("mouseenter");
-                        window.setTimeout(function () {
-                            jQuery("#pimcore_status_update").trigger("mouseleave");
-                        }, 5000);
-                    }
+                    var toolbar = pimcore.globalmanager.get("layout_toolbar");
+                    toolbar.notificationMenu.add({
+                        text: t("update_available"),
+                        iconCls: "pimcore_icon_reload",
+                        handler: function () {
+                            var html = '<div class="pimcore_about_window" xmlns="http://www.w3.org/1999/html">';
+                            html += '<h2 style="text-decoration: underline">New Version Available!</h2>';
+                            html += '<br><b>Your Version: ' + pimcore.settings.version + '</b>';
+                            html += '<br><b style="color: darkgreen;">New Version: ' + data['latestVersion'] + '</b>';
+                            html += '<h3 style="color: darkred">Please update as soon as possible!</h3>';
+                            html += '</div>';
 
-                    Ext.get("pimcore_status_update").on('click', function () {
-                        var html = '<div class="pimcore_about_window" xmlns="http://www.w3.org/1999/html">';
-                        html += '<h2 style="text-decoration: underline">New Version Available!</h2>';
-                        html += '<br><b>Your Version: ' + pimcore.settings.version + '</b>';
-                        html += '<br><b style="color: darkgreen;">New Version: ' + data['latestVersion'] + '</b>';
-                        html += '<h3 style="color: darkred">Please update as soon as possible!</h3>';
-                        html += '</div>';
-
-                        var win = new Ext.Window({
-                            title: "New Version Available!",
-                            width:500,
-                            height: 220,
-                            bodyStyle: "padding: 10px;",
-                            modal: true,
-                            html: html
-                        });
-                        win.show();
+                            var win = new Ext.Window({
+                                title: "New Version Available!",
+                                width:500,
+                                height: 220,
+                                bodyStyle: "padding: 10px;",
+                                modal: true,
+                                html: html
+                            });
+                            win.show();
+                        }
                     });
                 }
             }
@@ -575,16 +574,20 @@ Ext.onReady(function () {
                                 region: 'west',
                                 id: 'pimcore_panel_tree_left',
                                 cls: 'pimcore_main_accordion',
-                                split: true,
+                                split: {
+                                    cls: 'pimcore_main_splitter'
+                                },
                                 width: 300,
                                 minSize: 175,
                                 collapsible: true,
                                 collapseMode: 'header',
-                                hideCollapseTool: true,
-                                animCollapse: false,
+                                defaults: {
+                                    margin: '0'
+                                },
                                 layout: {
                                     type: 'accordion',
-                                    hideCollapseTool: true
+                                    hideCollapseTool: true,
+                                    animate: false
                                 },
                                 header: false,
                                 hidden: true,
@@ -619,20 +622,23 @@ Ext.onReady(function () {
                             region: 'east',
                             id: 'pimcore_panel_tree_right',
                             cls: "pimcore_main_accordion",
-                            split: true,
+                            split: {
+                                cls: 'pimcore_main_splitter'
+                            },
                             width: 300,
                             minSize: 175,
                             collapsible: true,
                             collapseMode: 'header',
-                            collapsed: false,
-                            hideCollapseTool: true,
-                            animCollapse: false,
-                            layout: 'accordion',
-                            hidden: true,
-                            header: false,
-                            layoutConfig: {
+                            defaults: {
+                                margin: '0'
+                            },
+                            layout: {
+                                type: 'accordion',
+                                hideCollapseTool: true,
                                 animate: false
                             },
+                            header: false,
+                            hidden: true,
                             forceLayout: true,
                             hideMode: "offsets",
                             items: []
@@ -755,7 +761,7 @@ Ext.onReady(function () {
                                 rootId: treeConfig.rootId,
                                 rootVisible: treeConfig.showroot,
                                 treeId: "pimcore_panel_tree_" + treetype + "_" + treeConfig.id,
-                                treeIconCls: "pimcore_" + treetype + "_customview_icon_" + treeConfig.id,
+                                treeIconCls: "pimcore_" + treetype + "_customview_icon_" + treeConfig.id + " pimcore_icon_material",
                                 treeTitle: ts(treeConfig.name),
                                 parentPanel: treepanel,
                                 loaderBaseParams: {}

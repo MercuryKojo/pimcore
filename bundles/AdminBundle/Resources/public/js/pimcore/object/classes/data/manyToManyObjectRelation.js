@@ -54,7 +54,7 @@ pimcore.object.classes.data.manyToManyObjectRelation = Class.create(pimcore.obje
     },
 
     getIconClass: function () {
-        return "pimcore_icon_objects";
+        return "pimcore_icon_manyToManyObjectRelation";
     },
 
     getLayout: function ($super) {
@@ -242,5 +242,5 @@ pimcore.object.classes.data.manyToManyObjectRelation = Class.create(pimcore.obje
 
 });
 
-// @TODO BC layer, to be removed in v6.0
+// @TODO BC layer, to be removed in v7.0
 pimcore.object.classes.data.objects = pimcore.object.classes.data.manyToManyObjectRelation;

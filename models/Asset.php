@@ -332,12 +332,17 @@ class Asset extends Element\AbstractElement
                         $mimeType = Mime::detect($streamMeta['uri']);
                     } else {
                         // write a tmp file because the stream isn't a pointer to the local filesystem
-                        rewind($data['stream']);
+                        $isRewindable = @rewind($data['stream']);
                         $dest = fopen($tmpFile, 'w+', false, File::getContext());
                         stream_copy_to_stream($data['stream'], $dest);
-                        fclose($dest);
                         $mimeType = Mime::detect($tmpFile);
-                        unlink($tmpFile);
+
+                        if (!$isRewindable) {
+                            $data['stream'] = $dest;
+                        } else {
+                            fclose($dest);
+                            unlink($tmpFile);
+                        }
                     }
                 }
             } else {
@@ -521,7 +526,7 @@ class Asset extends Element\AbstractElement
                             }
                             $differentOldPath = $oldPath;
                             $this->getDao()->updateWorkspaces();
-                            $updatedChildren = $this->getDao()->updateChildsPaths($oldPath);
+                            $updatedChildren = $this->getDao()->updateChildPaths($oldPath);
                         }
                     }
 
@@ -911,7 +916,7 @@ class Asset extends Element\AbstractElement
             $list->addConditionParam('id != ?', $this->getId());
             $list->setOrderKey('filename');
             $list->setOrder('asc');
-            $this->siblings = $list->load();
+            $this->siblings = $list->getAssets();
         }
 
         return $this->siblings;
@@ -1001,7 +1006,7 @@ class Asset extends Element\AbstractElement
         try {
             $this->closeStream();
 
-            // remove childs
+            // remove children
             if ($this->hasChildren()) {
                 foreach ($this->getChildren() as $child) {
                     $child->delete(true);
@@ -1303,7 +1308,17 @@ class Asset extends Element\AbstractElement
         if (is_resource($stream)) {
             $this->setDataChanged(true);
             $this->stream = $stream;
-            rewind($this->stream);
+
+            $isRewindable = @rewind($this->stream);
+
+            if (!$isRewindable) {
+                $tmpFile = PIMCORE_SYSTEM_TEMP_DIRECTORY . '/asset-create-tmp-file-' . uniqid() . '.' . File::getFileExtension($this->getFilename());
+                $dest = fopen($tmpFile, 'w+', false, File::getContext());
+                stream_copy_to_stream($this->stream, $dest);
+                $this->stream = $dest;
+
+                $this->_temporaryFiles[] = $tmpFile;
+            }
         } elseif (is_null($stream)) {
             $this->stream = null;
         }
@@ -1328,15 +1343,15 @@ class Asset extends Element\AbstractElement
      */
     public function getChecksum($type = 'md5')
     {
+        if (!in_array($type, hash_algos())) {
+            throw new \Exception(sprintf('Hashing algorithm `%s` is not supported', $type));
+        }
+
         $file = $this->getFileSystemPath();
         if (is_file($file)) {
-            if ($type == 'md5') {
-                return md5_file($file);
-            } elseif ($type == 'sha1') {
-                return sha1_file($file);
-            } else {
-                throw new \Exception("hashing algorithm '" . $type . "' isn't supported");
-            }
+            return hash_file($type, $file);
+        } elseif (\is_resource($this->getStream())) {
+            return hash($type, $this->getData());
         }
 
         return null;
@@ -1610,6 +1625,8 @@ class Asset extends Element\AbstractElement
         if (!empty($metadata)) {
             $this->setHasMetaData(true);
         }
+
+        return $this;
     }
 
     /**
@@ -1626,6 +1643,8 @@ class Asset extends Element\AbstractElement
     public function setHasMetaData($hasMetaData)
     {
         $this->hasMetaData = (bool) $hasMetaData;
+
+        return $this;
     }
 
     /**
@@ -1657,6 +1676,8 @@ class Asset extends Element\AbstractElement
 
             $this->setHasMetaData(true);
         }
+
+        return $this;
     }
 
     /**
@@ -1827,15 +1848,15 @@ class Asset extends Element\AbstractElement
     {
         $finalVars = [];
         $parentVars = parent::__sleep();
-        $blockedVars = ['_temporaryFiles', 'scheduledTasks', 'dependencies', 'userPermissions', 'hasChilds', 'versions', 'parent', 'stream'];
+        $blockedVars = ['_temporaryFiles', 'scheduledTasks', 'dependencies', 'userPermissions', 'hasChildren', 'versions', 'parent', 'stream'];
 
         if (isset($this->_fulldump)) {
-            // this is if we want to make a full dump of the asset (eg. for a new version), including childs for recyclebin
+            // this is if we want to make a full dump of the asset (eg. for a new version), including children for recyclebin
             $finalVars[] = '_fulldump';
             $this->removeInheritedProperties();
         } else {
             // this is if we want to cache the asset
-            $blockedVars = array_merge($blockedVars, ['childs', 'properties']);
+            $blockedVars = array_merge($blockedVars, ['children', 'properties']);
         }
 
         foreach ($parentVars as $key) {
