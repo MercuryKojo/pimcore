@@ -22,11 +22,16 @@ use Pimcore\Event\Model\VersionEvent;
 use Pimcore\Event\VersionEvents;
 use Pimcore\File;
 use Pimcore\Logger;
+use Pimcore\Model\DataObject\ClassDefinition\Data;
 use Pimcore\Model\DataObject\Concrete;
+use Pimcore\Model\Element\ElementDumpStateInterface;
 use Pimcore\Model\Element\ElementInterface;
 use Pimcore\Model\Element\Service;
 use Pimcore\Model\Version\ElementDescriptor;
 use Pimcore\Model\Version\MarshalMatcher;
+use Pimcore\Model\Version\PimcoreClassDefinitionMatcher;
+use Pimcore\Model\Version\PimcoreClassDefinitionReplaceFilter;
+use Pimcore\Model\Version\SetDumpStateFilter;
 use Pimcore\Model\Version\UnmarshalMatcher;
 use Pimcore\Tool\Serialize;
 
@@ -35,9 +40,6 @@ use Pimcore\Tool\Serialize;
  */
 class Version extends AbstractModel
 {
-    /** @var bool for now&testing, make it possible to disable it */
-    protected static $condenseVersion = true;
-
     /**
      * @var int
      */
@@ -183,13 +185,13 @@ class Version extends AbstractModel
         if (is_object($data) or is_array($data)) {
 
             // this is because of lazy loaded element inside documents and objects (eg: relational data-types, fieldcollections, ...)
+            $fromRuntime = null;
+            $cacheKey = null;
             if ($data instanceof Element\ElementInterface) {
                 Element\Service::loadAllFields($data);
             }
 
             $this->setSerialized(true);
-
-            $data->_fulldump = true;
 
             $condensedData = $this->marshalData($data);
 
@@ -199,7 +201,6 @@ class Version extends AbstractModel
             if (method_exists($data, '__wakeup')) {
                 $data->__wakeup();
             }
-            unset($data->_fulldump);
         } else {
             $dataString = $data;
         }
@@ -258,14 +259,11 @@ class Version extends AbstractModel
      */
     public function marshalData($data)
     {
-        if (!self::isCondenseVersionEnabled()) {
-            return $data;
-        }
-
         $sourceType = Service::getType($data);
         $sourceId = $data->getId();
 
         $copier = new DeepCopy();
+        $copier->skipUncloneable(true);
         $copier->addTypeFilter(
             new \DeepCopy\TypeFilter\ReplaceFilter(
                 function ($currentValue) {
@@ -281,16 +279,33 @@ class Version extends AbstractModel
             ),
             new MarshalMatcher($sourceType, $sourceId)
         );
+
+        if ($data instanceof Concrete) {
+            $copier->addFilter(
+                new PimcoreClassDefinitionReplaceFilter(
+                    function (Concrete $object, Data $fieldDefinition, $property, $currentValue) {
+                        if ($fieldDefinition instanceof Data\CustomVersionMarshalInterface) {
+                            return $fieldDefinition->marshalVersion($object, $currentValue);
+                        }
+
+                        return $currentValue;
+                    }
+                ),
+                new PimcoreClassDefinitionMatcher(Data\CustomVersionMarshalInterface::class)
+            );
+        }
+
         $copier->addFilter(new \DeepCopy\Filter\Doctrine\DoctrineCollectionFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Doctrine\Common\Collections\Collection'));
         $copier->addFilter(new \DeepCopy\Filter\SetNullFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Pimcore\Templating\Model\ViewModelInterface'));
         $copier->addFilter(new \DeepCopy\Filter\SetNullFilter(), new \DeepCopy\Matcher\PropertyTypeMatcher('Psr\Container\ContainerInterface'));
+        $copier->addFilter(new SetDumpStateFilter(true), new \DeepCopy\Matcher\PropertyMatcher(ElementDumpStateInterface::class, ElementDumpStateInterface::DUMP_STATE_PROPERTY_NAME));
         $newData = $copier->copy($data);
 
         return $newData;
     }
 
     /**
-     * @param $data
+     * @param ElementInterface $data
      *
      * @return mixed
      */
@@ -311,9 +326,23 @@ class Version extends AbstractModel
             ),
             new UnmarshalMatcher()
         );
-        $newData = $copier->copy($data);
 
-        return $newData;
+        if ($data instanceof Concrete) {
+            $copier->addFilter(
+                new PimcoreClassDefinitionReplaceFilter(
+                    function (Concrete $object, Data $fieldDefinition, $property, $currentValue) {
+                        if ($fieldDefinition instanceof Data\CustomVersionMarshalInterface) {
+                            return $fieldDefinition->unmarshalVersion($object, $currentValue);
+                        }
+
+                        return $currentValue;
+                    }
+                ),
+                new PimcoreClassDefinitionMatcher(Data\CustomVersionMarshalInterface::class)
+            );
+        }
+
+        return $copier->copy($data);
     }
 
     /**
@@ -345,7 +374,7 @@ class Version extends AbstractModel
     /**
      * Object
      *
-     * @param $renewReferences
+     * @param bool $renewReferences
      *
      * @return mixed
      */
@@ -353,6 +382,7 @@ class Version extends AbstractModel
     {
         $data = null;
         $zipped = false;
+        $filePath = null;
 
         // check both the legacy file path and the new structure
         foreach ([$this->getFilePath(), $this->getLegacyFilePath()] as $path) {
@@ -397,11 +427,11 @@ class Version extends AbstractModel
         }
 
         if ($data instanceof Asset && file_exists($this->getBinaryFilePath())) {
-            $binaryHandle = fopen($this->getBinaryFilePath(), 'r+', false, File::getContext());
+            $binaryHandle = fopen($this->getBinaryFilePath(), 'rb', false, File::getContext());
             $data->setStream($binaryHandle);
-        } elseif ($data instanceof Asset && $data->data) {
+        } elseif ($data instanceof Asset && $data->getObjectVar('data')) {
             // this is for backward compatibility
-            $data->setData($data->data);
+            $data->setData($data->getObjectVar('data'));
         }
 
         if ($renewReferences) {
@@ -498,7 +528,7 @@ class Version extends AbstractModel
     }
 
     /**
-     * @param $cid
+     * @param int $cid
      *
      * @return $this
      */
@@ -720,21 +750,5 @@ class Version extends AbstractModel
     public function setBinaryFileId(?int $binaryFileId): void
     {
         $this->binaryFileId = $binaryFileId;
-    }
-
-    /**
-     * @return bool
-     */
-    public static function isCondenseVersionEnabled()
-    {
-        return self::$condenseVersion;
-    }
-
-    /**
-     * @param bool $condenseVersion
-     */
-    public static function setCondenseVersion($condenseVersion)
-    {
-        self::$condenseVersion = $condenseVersion;
     }
 }

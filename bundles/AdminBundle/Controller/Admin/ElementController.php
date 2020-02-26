@@ -91,6 +91,7 @@ class ElementController extends AdminController
         }
 
         if ($el) {
+            $subtype = null;
             if ($el instanceof Asset || $el instanceof Document) {
                 $subtype = $el->getType();
             } elseif ($el instanceof DataObject\Concrete) {
@@ -305,6 +306,7 @@ class ElementController extends AdminController
      */
     public function findUsagesAction(Request $request)
     {
+        $element = null;
         if ($request->get('id')) {
             $element = Element\Service::getElementById($request->get('type'), $request->get('id'));
         } elseif ($request->get('path')) {
@@ -315,7 +317,7 @@ class ElementController extends AdminController
         $success = false;
         $hasHidden = false;
 
-        if ($element) {
+        if ($element instanceof Element\AbstractElement) {
             $elements = $element->getDependencies()->getRequiredBy();
             foreach ($elements as $el) {
                 $item = Element\Service::getElementById($el['type'], $el['id']);
@@ -499,7 +501,8 @@ class ElementController extends AdminController
                 $editModeData = $fd->getDataForEditmode($data, $source);
                 if (is_array($editModeData)) {
                     foreach ($editModeData as $relationObjectAttribute) {
-                        $relationObjectAttribute['$$nicepath'] = $result[$relationObjectAttribute[$idProperty]];
+                        $relationObjectAttribute['$$nicepath'] =
+                            isset($relationObjectAttribute[$idProperty]) && isset($result[$relationObjectAttribute[$idProperty]]) ? $result[$relationObjectAttribute[$idProperty]] : null;
                         $result[$relationObjectAttribute[$idProperty]] = $relationObjectAttribute;
                     }
                 } else {
@@ -543,6 +546,7 @@ class ElementController extends AdminController
 
                     $versions = $element->getVersions();
                     $versions = Model\Element\Service::getSafeVersionInfo($versions);
+                    $versions = array_reverse($versions); //reverse array to sort by ID DESC
                     foreach ($versions as &$version) {
                         $version['scheduled'] = null;
                         if (array_key_exists($version['id'], $schedules)) {
@@ -552,12 +556,14 @@ class ElementController extends AdminController
 
                     return $this->adminJson(['versions' => $versions]);
                 } else {
-                    throw new \Exception('Permission denied, ' . $type . ' id [' . $id . ']');
+                    throw $this->createAccessDeniedException('Permission denied, ' . $type . ' id [' . $id . ']');
                 }
             } else {
-                throw new \Exception($type . ' with id [' . $id . "] doesn't exist");
+                throw $this->createNotFoundException($type . ' with id [' . $id . "] doesn't exist");
             }
         }
+
+        throw $this->createNotFoundException('Element type not found');
     }
 
     /**
@@ -733,8 +739,8 @@ class ElementController extends AdminController
     }
 
     /**
-     * @param $source
-     * @param $context
+     * @param DataObject\Concrete $source
+     * @param array $context
      *
      * @return bool|DataObject\ClassDefinition\Data|null
      *
@@ -750,12 +756,18 @@ class ElementController extends AdminController
             $subContainerType = isset($context['subContainerType']) ? $context['subContainerType'] : null;
             if ($subContainerType) {
                 $subContainerKey = $context['subContainerKey'];
-                $fd = $source->getClass()->getFieldDefinition($subContainerKey)->getFieldDefinition($fieldname);
+                $subContainer = $source->getClass()->getFieldDefinition($subContainerKey);
+                if (method_exists($subContainer, 'getFieldDefinition')) {
+                    $fd = $subContainer->getFieldDefinition($fieldname);
+                }
             } else {
                 $fd = $source->getClass()->getFieldDefinition($fieldname);
             }
         } elseif ($ownerType == 'localizedfield') {
-            $fd = $source->getClass()->getFieldDefinition('localizedfields')->getFieldDefinition($fieldname);
+            $localizedfields = $source->getClass()->getFieldDefinition('localizedfields');
+            if ($localizedfields instanceof DataObject\ClassDefinition\Data\Localizedfields) {
+                $fd = $localizedfields->getFieldDefinition($fieldname);
+            }
         } elseif ($ownerType == 'objectbrick') {
             $fdBrick = DataObject\Objectbrick\Definition::getByKey($context['containerKey']);
             $fd = $fdBrick->getFieldDefinition($fieldname);
@@ -763,6 +775,7 @@ class ElementController extends AdminController
             $containerKey = $context['containerKey'];
             $fdCollection = DataObject\Fieldcollection\Definition::getByKey($containerKey);
             if ($context['subContainerType'] == 'localizedfield') {
+                /** @var DataObject\ClassDefinition\Data\Localizedfields $fdLocalizedFields */
                 $fdLocalizedFields = $fdCollection->getFieldDefinition('localizedfields');
                 $fd = $fdLocalizedFields->getFieldDefinition($fieldname);
             } else {
@@ -775,9 +788,9 @@ class ElementController extends AdminController
 
     /**
      * @param DataObject\Concrete $source
-     * @param                     $context
-     * @param                     $result
-     * @param                     $targets
+     * @param array $context
+     * @param array $result
+     * @param array $targets
      *
      * @return array
      *

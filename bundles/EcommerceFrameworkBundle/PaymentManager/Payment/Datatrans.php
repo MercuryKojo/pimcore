@@ -184,9 +184,9 @@ class Datatrans extends AbstractPayment implements \Pimcore\Bundle\EcommerceFram
         // check params
         $required = $this->getRequiredRequestFields();
 
-        $config = array_intersect_key($config, $required);
+        $requiredConfigIntersect = array_intersect_key($config, $required);
 
-        if (count($required) != count($config)) {
+        if (count($required) != count($requiredConfigIntersect)) {
             throw new \Exception(sprintf('required fields are missing! required: %s', implode(', ', array_keys(array_diff_key($required, $config)))));
         }
 
@@ -388,7 +388,7 @@ class Datatrans extends AbstractPayment implements \Pimcore\Bundle\EcommerceFram
     }
 
     /**
-     * @param $response
+     * @param array $response
      *
      * @return array
      */
@@ -828,5 +828,7 @@ XML;
 
         $orderListing->setOrderKey("`{$providerBrickName}`.`paymentFinished`", false);
         $orderListing->setOrder('DESC');
+
+        return $orderListing;
     }
 }

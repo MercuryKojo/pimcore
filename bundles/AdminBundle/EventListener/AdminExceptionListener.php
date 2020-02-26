@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 namespace Pimcore\Bundle\AdminBundle\EventListener;
 
+use Doctrine\DBAL\DBALException;
 use Pimcore\Bundle\AdminBundle\HttpFoundation\JsonResponse;
 use Pimcore\Bundle\CoreBundle\EventListener\Traits\PimcoreContextAwareTrait;
 use Pimcore\Http\Request\Resolver\PimcoreContextResolver;
@@ -59,6 +60,13 @@ class AdminExceptionListener implements EventSubscriberInterface
 
             list($code, $headers, $message) = $this->getResponseData($ex);
 
+            if (!\Pimcore::inDebugMode()) {
+                // DBAL exceptions do include SQL statements, we don't want to expose them
+                if ($ex instanceof DBALException) {
+                    $message = 'Database error, see logs for details';
+                }
+            }
+
             $data = [
                 'success' => false,
                 'message' => $message,
@@ -66,12 +74,12 @@ class AdminExceptionListener implements EventSubscriberInterface
 
             if (\Pimcore::inDebugMode()) {
                 $data['trace'] = $ex->getTrace();
-                $data['traceString'] = $ex->getTraceAsString();
+                $data['traceString'] = 'in ' . $ex->getFile() . ':' . $ex->getLine() . "\n" . $ex->getTraceAsString();
             }
 
             if ($ex instanceof ValidationException) {
                 $data['type'] = 'ValidationException';
-                $code = 403;
+                $code = 422;
 
                 $this->recursiveAddValidationExceptionSubItems($ex->getSubItems(), $message, $data['traceString']);
             }
@@ -83,7 +91,7 @@ class AdminExceptionListener implements EventSubscriberInterface
         } elseif ($this->matchesPimcoreContext($request, PimcoreContextResolver::CONTEXT_WEBSERVICE)) {
             list($code, $headers, $message) = $this->getResponseData($ex);
 
-            if ($ex instanceof \Doctrine\DBAL\DBALException) {
+            if ($ex instanceof DBALException) {
                 $message = 'Database error, see logs for details';
             }
 
@@ -124,16 +132,15 @@ class AdminExceptionListener implements EventSubscriberInterface
     }
 
     /**
-     * @param $items
-     * @param $message
-     * @param $detailedInfo
+     * @param ValidationException[] $items
+     * @param string $message
+     * @param string $detailedInfo
      */
     protected function recursiveAddValidationExceptionSubItems($items, &$message, &$detailedInfo)
     {
         if (!$items) {
             return;
         }
-        /** @var $items ValidationException[] */
         foreach ($items as $e) {
             if ($e->getMessage()) {
                 $message .= '<b>' . $e->getMessage() . '</b>';
@@ -153,7 +160,7 @@ class AdminExceptionListener implements EventSubscriberInterface
 
     /**
      * @param ValidationException $e
-     * @param $message
+     * @param string $message
      */
     protected function addContext(ValidationException $e, &$message)
     {

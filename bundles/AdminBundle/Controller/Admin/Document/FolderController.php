@@ -15,10 +15,9 @@
 namespace Pimcore\Bundle\AdminBundle\Controller\Admin\Document;
 
 use Pimcore\Controller\Traits\ElementEditLockHelperTrait;
-use Pimcore\Event\AdminEvents;
+use Pimcore\Event\Admin\ElementAdminStyleEvent;
 use Pimcore\Model\Document;
 use Pimcore\Model\Element;
-use Symfony\Component\EventDispatcher\GenericEvent;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
@@ -39,38 +38,30 @@ class FolderController extends DocumentControllerBase
      */
     public function getDataByIdAction(Request $request)
     {
-        // check for lock
-        if (Element\Editlock::isLocked($request->get('id'), 'document')) {
-            return $this->getEditLockResponse($request->get('id'), 'document');
-        }
-        Element\Editlock::lock($request->get('id'), 'document');
-
         $folder = Document\Folder::getById($request->get('id'));
-        $folder = clone $folder;
 
-        $folder->idPath = Element\Service::getIdPath($folder);
-        $folder->setUserPermissions($folder->getUserPermissions());
+        if (!$folder) {
+            throw $this->createNotFoundException('Folder not found');
+        }
+
+        // check for lock
+        if ($folder->isAllowed('save') || $folder->isAllowed('publish') || $folder->isAllowed('unpublish') || $folder->isAllowed('delete')) {
+            if (Element\Editlock::isLocked($request->get('id'), 'document')) {
+                return $this->getEditLockResponse($request->get('id'), 'document');
+            }
+            Element\Editlock::lock($request->get('id'), 'document');
+        }
+
+        $folder = clone $folder;
         $folder->setLocked($folder->isLocked());
         $folder->setParent(null);
 
         $this->addTranslationsData($folder);
         $this->minimizeProperties($folder);
 
-        //Hook for modifying return value - e.g. for changing permissions based on object data
-        //data need to wrapped into a container in order to pass parameter to event listeners by reference so that they can change the values
         $data = $folder->getObjectVars();
 
-        $data['php'] = [
-            'classes' => array_merge([get_class($folder)], array_values(class_parents($folder))),
-            'interfaces' => array_values(class_implements($folder))
-        ];
-
-        $event = new GenericEvent($this, [
-            'data' => $data,
-            'document' => $folder
-        ]);
-        \Pimcore::getEventDispatcher()->dispatch(AdminEvents::DOCUMENT_GET_PRE_SEND_DATA, $event);
-        $data = $event->getArgument('data');
+        $this->preSendDataActions($data, $folder);
 
         if ($folder->isAllowed('view')) {
             return $this->adminJson($data);
@@ -90,22 +81,25 @@ class FolderController extends DocumentControllerBase
      */
     public function saveAction(Request $request)
     {
-        if ($request->get('id')) {
-            $folder = Document\Folder::getById($request->get('id'));
-            $folder->setModificationDate(time());
-            $folder->setUserModification($this->getAdminUser()->getId());
+        $folder = Document\Folder::getById($request->get('id'));
 
-            if ($folder->isAllowed('publish')) {
-                $this->setValuesToDocument($request, $folder);
-                $folder->save();
-
-                return $this->adminJson(['success' => true]);
-            } else {
-                throw $this->createAccessDeniedHttpException();
-            }
+        if (!$folder) {
+            throw $this->createNotFoundException('Folder not found');
         }
 
-        throw $this->createNotFoundException();
+        $folder->setModificationDate(time());
+        $folder->setUserModification($this->getAdminUser()->getId());
+
+        if ($folder->isAllowed('publish')) {
+            $this->setValuesToDocument($request, $folder);
+            $folder->save();
+
+            $this->addAdminStyle($folder, ElementAdminStyleEvent::CONTEXT_EDITOR, $treeData);
+
+            return $this->adminJson(['success' => true, 'treeData' => $treeData]);
+        } else {
+            throw $this->createAccessDeniedHttpException();
+        }
     }
 
     /**

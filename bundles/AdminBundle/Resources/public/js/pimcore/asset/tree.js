@@ -346,38 +346,10 @@ pimcore.asset.tree = Class.create({
             "itemmove": this.onTreeNodeMove.bind(this),
             "beforeitemmove": this.onTreeNodeBeforeMove.bind(this),
             "itemmouseenter": function (el, record, item, index, e, eOpts) {
-
-                if (record.data.qtipCfg) {
-                    var text = "<b>" + record.data.qtipCfg.title + "</b> | ";
-
-                    if (record.data.qtipCfg.text) {
-                        text += record.data.qtipCfg.text;
-                    } else {
-                        text += (t("type") + ": "+ t(record.data.type));
-                    }
-
-                    jQuery("#pimcore_tooltip").show();
-                    jQuery("#pimcore_tooltip").html(text);
-                    jQuery("#pimcore_tooltip").removeClass('right');
-
-                    var offsetTabPanel = jQuery("#pimcore_panel_tabs").offset();
-
-                    var offsetTreeNode = jQuery(item).offset();
-
-                    var parentTree = el.ownerCt.ownerCt;
-
-                    if(parentTree.region == 'west') {
-                        jQuery("#pimcore_tooltip").css({top: offsetTreeNode.top + 8, left: offsetTabPanel.left, right: 'auto'});
-                    }
-
-                    if(parentTree.region == 'east') {
-                        jQuery("#pimcore_tooltip").addClass('right');
-                        jQuery("#pimcore_tooltip").css({top: offsetTreeNode.top + 8, right: parentTree.width+35, left: 'auto'});
-                    }
-                }
+                pimcore.helpers.treeToolTipShow(el, record, item);
             },
             "itemmouseleave": function () {
-                jQuery("#pimcore_tooltip").hide();
+                pimcore.helpers.treeToolTipHide();
             }
         };
 
@@ -947,6 +919,12 @@ pimcore.asset.tree = Class.create({
     addFolderCreate: function (tree, record, button, value, object) {
 
         if (button == "ok") {
+
+            // check for identical folder name in current level
+            if (pimcore.elementservice.isKeyExistingInLevel(record, value)) {
+                return;
+            }
+
             Ext.Ajax.request({
                 url: "/admin/asset/add-folder",
                 method: "POST",
@@ -1256,7 +1234,7 @@ pimcore.asset.tree = Class.create({
             elementType: "asset",
             elementSubType: record.data.type,
             id: record.data.id,
-            default: record.data.text
+            default: Ext.util.Format.htmlDecode(record.data.text)
         };
         pimcore.elementservice.editElementKey(options);
     },
